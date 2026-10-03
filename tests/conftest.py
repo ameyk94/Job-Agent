@@ -16,7 +16,10 @@ os.environ["OPIK_API_KEY"] = ""
 os.environ["ADZUNA_APP_ID"] = ""
 os.environ["ADZUNA_APP_KEY"] = ""
 os.environ["JSEARCH_API_KEY"] = ""
-os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
+os.environ["OPENROUTER_API_KEY"] = "test-openrouter-key"
+os.environ["OPIK_MODE"] = "local"
+os.environ["OPIK_URL_OVERRIDE"] = ""
+os.environ["TRACE_ATTACH_CV"] = "false"
 
 from job_scout.config import get_settings  # noqa: E402
 from job_scout.graph.schemas import JobPosting, Profile  # noqa: E402

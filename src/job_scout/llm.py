@@ -9,11 +9,10 @@ correct.
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 
-from langchain.chat_models import init_chat_model
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_openai import ChatOpenAI
 
 from job_scout.config import get_settings
 
@@ -22,25 +21,16 @@ class LLMBudgetExceededError(RuntimeError):
     """Raised when a run would exceed ``MAX_LLM_CALLS_PER_RUN``."""
 
 
-def _export_openai_key() -> None:
-    """Copy the OpenAI key from settings into the environment for LangChain.
-
-    ``pydantic-settings`` reads ``.env`` into the ``Settings`` object but does not
-    export to ``os.environ``, which is where the OpenAI client looks for its key.
-    """
-    if os.environ.get("OPENAI_API_KEY"):
-        return
-    key = get_settings().openai_api_key.get_secret_value()
-    if key:
-        os.environ["OPENAI_API_KEY"] = key
-
-
 @lru_cache(maxsize=8)
 def get_chat_model(model: str, temperature: float = 0.0) -> BaseChatModel:
-    """Return a cached chat model for a LangChain provider string (e.g. ``openai:gpt-4o-mini``)."""
-    if model.startswith("openai:"):
-        _export_openai_key()
-    return init_chat_model(model, temperature=temperature)
+    """Return a cached chat model for an OpenRouter model id (e.g. ``openai/gpt-4o-mini``)."""
+    settings = get_settings()
+    return ChatOpenAI(
+        model=model,
+        temperature=temperature,
+        base_url=settings.llm_base_url,
+        api_key=settings.openrouter_api_key,
+    )
 
 
 def ensure_budget(current_calls: int, planned: int, max_calls: int) -> None:

@@ -10,6 +10,7 @@ constants remain the source of truth; Opik mirrors them.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from functools import lru_cache
 from pathlib import Path
@@ -20,7 +21,9 @@ from job_scout.graph.prompts.rank_jobs import RANK_JOBS_PROMPT, RANK_JOBS_PROMPT
 from job_scout.graph.prompts.reformulate import REFORMULATE_PROMPT, REFORMULATE_PROMPT_NAME
 from job_scout.profile import EXTRACT_PROFILE_PROMPT, EXTRACT_PROFILE_PROMPT_NAME
 
+logger = logging.getLogger(__name__)
 _CONFIGURED = False
+_FAILED = False
 
 
 @lru_cache(maxsize=1)
@@ -40,22 +43,39 @@ def git_sha() -> str:
 
 
 def configure_opik() -> bool:
-    """Configure the Opik SDK once. Returns True if tracing is active."""
-    global _CONFIGURED
+    """Configure the Opik SDK once. Returns True if tracing is active.
+
+    Never raises: if Opik is unreachable or misconfigured, tracing is disabled
+    for the rest of the process and the run continues untraced.
+    """
+    global _CONFIGURED, _FAILED
     settings = get_settings()
-    if not settings.has_opik:
+    if not settings.has_opik or _FAILED:
         return False
     if _CONFIGURED:
         return True
-    import opik
+    try:
+        import opik
 
-    opik.configure(
-        api_key=settings.opik_api_key.get_secret_value(),
-        workspace=settings.opik_workspace or None,
-        project_name=settings.opik_project_name,
-        use_local=False,
-        force=True,
-    )
+        if settings.opik_mode == "local":
+            opik.configure(
+                use_local=True,
+                url=settings.opik_url_override,
+                project_name=settings.opik_project_name,
+                force=True,
+            )
+        else:
+            opik.configure(
+                api_key=settings.opik_api_key.get_secret_value(),
+                workspace=settings.opik_workspace or None,
+                project_name=settings.opik_project_name,
+                use_local=False,
+                force=True,
+            )
+    except Exception as exc:  # noqa: BLE001 - tracing must never break a run
+        logger.warning("Opik unavailable, tracing disabled: %s", exc)
+        _FAILED = True
+        return False
     _CONFIGURED = True
     return True
 
@@ -87,7 +107,7 @@ def trace_graph(compiled_graph, tracer):
 
 def attach_cv(tracer, pdf_path: str | Path) -> None:
     """Attach the uploaded CV PDF to the run's trace (best effort, post-run)."""
-    if tracer is None:
+    if tracer is None or not get_settings().trace_attach_cv:
         return
     try:
         import opik
@@ -114,6 +134,8 @@ def attach_cv(tracer, pdf_path: str | Path) -> None:
 def opik_url() -> str:
     """Best-effort dashboard link for the run footer."""
     settings = get_settings()
+    if settings.opik_mode == "local":
+        return settings.opik_url_override.removesuffix("/api").rstrip("/") or "http://localhost:5173"
     ws = settings.opik_workspace
     if ws:
         return f"https://www.comet.com/opik/{ws}/projects"
