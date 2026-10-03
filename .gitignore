@@ -20,6 +20,9 @@ dist/
 .ruff_cache/
 .ipynb_checkpoints/
 
+# Real CVs and personal outputs (ADR-003)
+private/
+
 # OS
 .DS_Store
 

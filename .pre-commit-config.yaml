@@ -15,3 +15,29 @@ repos:
       - id: ruff
         args: ["--fix"]
       - id: ruff-format
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  # Privacy guards (ADR-003). CI runs these too, so a skipped local hook still fails the PR.
+  - repo: local
+    hooks:
+      - id: block-env-files
+        name: block .env files (except .env.example, .env.test)
+        entry: ".env files hold secrets and must not be committed"
+        language: fail
+        files: '(^|/)\.env(\..+)?$'
+        exclude: '(^|/)\.env\.(example|test)$'
+      - id: block-stray-pdfs
+        name: block PDFs outside data/fixture_cvs/
+        entry: "PDFs may contain a real CV; only synthetic fixtures in data/fixture_cvs/ are allowed"
+        language: fail
+        files: '\.pdf$'
+        exclude: '^data/fixture_cvs/'
+      - id: block-private-dir
+        name: block private/
+        entry: "private/ is git-ignored by design (ADR-003)"
+        language: fail
+        files: '^private/'
