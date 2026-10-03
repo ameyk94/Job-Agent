@@ -8,6 +8,7 @@ name is documented in ``.env.example``.
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,11 +24,17 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    scout_model: str = Field(default="openai:gpt-4o-mini", alias="SCOUT_MODEL")
-    scout_tailor_model: str = Field(default="openai:gpt-4o-mini", alias="SCOUT_TAILOR_MODEL")
+    # An OpenRouter model id, e.g. "openai/gpt-4o-mini". The Phase 1 default is a placeholder.
+    scout_model: str = Field(default="openai/gpt-4o-mini", alias="SCOUT_MODEL")
+    scout_tailor_model: str = Field(default="openai/gpt-4o-mini", alias="SCOUT_TAILOR_MODEL")
 
-    openai_api_key: SecretStr = Field(default=SecretStr(""), alias="OPENAI_API_KEY")
+    openrouter_api_key: SecretStr = Field(default=SecretStr(""), alias="OPENROUTER_API_KEY")
+    llm_base_url: str = Field(default="https://openrouter.ai/api/v1", alias="LLM_BASE_URL")
 
+    # "local" = self-hosted Opik (needs OPIK_URL_OVERRIDE); "cloud" = Opik Cloud (needs OPIK_API_KEY).
+    opik_mode: Literal["local", "cloud"] = Field(default="local", alias="OPIK_MODE")
+    opik_url_override: str = Field(default="", alias="OPIK_URL_OVERRIDE")
+    trace_attach_cv: bool = Field(default=False, alias="TRACE_ATTACH_CV")
     opik_api_key: SecretStr = Field(default=SecretStr(""), alias="OPIK_API_KEY")
     opik_workspace: str = Field(default="", alias="OPIK_WORKSPACE")
     opik_project_name: str = Field(default="job-scout", alias="OPIK_PROJECT_NAME")
@@ -39,7 +46,9 @@ class Settings(BaseSettings):
 
     max_llm_calls_per_run: int = Field(default=25, alias="MAX_LLM_CALLS_PER_RUN")
 
-    @field_validator("opik_workspace", "opik_project_name", "scout_model", "scout_tailor_model", mode="before")
+    @field_validator(
+        "opik_workspace", "opik_project_name", "opik_url_override", "scout_model", "scout_tailor_model", mode="before"
+    )
     @classmethod
     def _drop_inline_comment(cls, value: object) -> object:
         """Treat a value that is only a ``# comment`` as empty.
@@ -65,8 +74,12 @@ class Settings(BaseSettings):
 
     @property
     def has_opik(self) -> bool:
-        """Whether Opik tracing is enabled and has an API key."""
-        return self.opik_enabled and bool(self.opik_api_key.get_secret_value())
+        """Whether Opik tracing is enabled and the chosen mode has what it needs."""
+        if not self.opik_enabled:
+            return False
+        if self.opik_mode == "local":
+            return bool(self.opik_url_override)
+        return bool(self.opik_api_key.get_secret_value())
 
 
 @lru_cache(maxsize=1)

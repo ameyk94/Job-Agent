@@ -52,7 +52,7 @@ class RunResult:
 
 def _estimate_cost(usage: dict, model: str) -> float:
     """Estimate USD cost from token usage, for the footer (Opik has the exact figure)."""
-    in_price, out_price = _PRICES_PER_MTOK.get(model.split(":", 1)[-1], (0.0, 0.0))
+    in_price, out_price = _PRICES_PER_MTOK.get(model.split(":", 1)[-1].split("/", 1)[-1], (0.0, 0.0))
     total = 0.0
     for stats in usage.values():
         total += stats.get("input_tokens", 0) / 1_000_000 * in_price
