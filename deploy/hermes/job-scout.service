@@ -1,0 +1,14 @@
+[Unit]
+Description=Job Scout (Gradio UI)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/Job-Agent
+EnvironmentFile=-%h/Job-Agent/.env
+Environment=GRADIO_SERVER_NAME=0.0.0.0 GRADIO_SERVER_PORT=7860
+ExecStart=%h/.local/bin/uv run --no-dev python -m job_scout.app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
