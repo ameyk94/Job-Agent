@@ -1,0 +1,10 @@
+[Unit]
+Description=Job Scout scheduled scan
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Job-Agent
+EnvironmentFile=-%h/Job-Agent/.env
+ExecStart=%h/.local/bin/uv run --no-dev job-scout run
+TimeoutStartSec=30min

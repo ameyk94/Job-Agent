@@ -20,6 +20,8 @@ os.environ["OPENROUTER_API_KEY"] = "test-openrouter-key"
 os.environ["OPIK_MODE"] = "local"
 os.environ["OPIK_URL_OVERRIDE"] = ""
 os.environ["TRACE_ATTACH_CV"] = "false"
+for _k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_TO"):
+    os.environ[_k] = ""
 
 from job_scout.config import get_settings  # noqa: E402
 from job_scout.graph.schemas import JobPosting, Profile  # noqa: E402
