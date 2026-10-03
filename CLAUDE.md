@@ -169,9 +169,14 @@ the loop fires often and rarely helps; the loop triples cost and latency; scores
 10. Verify: fresh clone → `make setup && make test` passes with zero keys; open a PR, CI green, merge;
     tag `v0.0` with release notes.
 
+## Target roles (confirmed 2026-10-03; drives Phase 2 fixtures and the ranking rubric)
+
+In priority order: Data Scientist, Data Analyst, Product Analyst, Analytics Engineer.
+Strategy + analytics roles (e.g. strategy & operations, business analytics) are also welcome, ranked below the four above.
+
 ## Still to confirm with the owner
 
 - GitHub username and final repo name (working name: `job-scout`)
-- Target roles, seniority and field (needed by Phase 2 for fixtures and the ranking rubric)
+- Seniority (needed by Phase 2 for fixtures and the ranking rubric)
 - Hermes details: OS, whether it's the dev machine or a separate server, and its LAN hostname
 - Weekly hours available (plan assumes 8–10)
