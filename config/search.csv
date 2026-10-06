@@ -1,0 +1,11 @@
+role,location,remote_only
+Data Scientist,Toronto,false
+Data Scientist,Canada,true
+Data Analyst,Toronto,false
+Data Analyst,Canada,true
+Product Analyst,Toronto,false
+Product Analyst,Canada,true
+Analytics Engineer,Toronto,false
+Analytics Engineer,Canada,true
+Strategy Analytics,Toronto,false
+Business Analyst,Toronto,false
