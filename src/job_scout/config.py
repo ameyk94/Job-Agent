@@ -44,10 +44,32 @@ class Settings(BaseSettings):
     adzuna_app_id: SecretStr = Field(default=SecretStr(""), alias="ADZUNA_APP_ID")
     adzuna_app_key: SecretStr = Field(default=SecretStr(""), alias="ADZUNA_APP_KEY")
 
+    # Scheduled run (`job-scout run`) and notifications. Each channel is off until fully configured.
+    scout_cv_path: str = Field(default="private/cv.pdf", alias="SCOUT_CV_PATH")
+    scout_db_path: str = Field(default="private/scout.db", alias="SCOUT_DB_PATH")
+    notify_min_score: int = Field(default=70, alias="NOTIFY_MIN_SCORE")
+    telegram_bot_token: SecretStr = Field(default=SecretStr(""), alias="TELEGRAM_BOT_TOKEN")
+    telegram_chat_id: str = Field(default="", alias="TELEGRAM_CHAT_ID")
+    telegram_thread_id: str = Field(default="", alias="TELEGRAM_THREAD_ID")
+    smtp_host: str = Field(default="smtp.gmail.com", alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, alias="SMTP_PORT")
+    smtp_user: str = Field(default="", alias="SMTP_USER")
+    smtp_password: SecretStr = Field(default=SecretStr(""), alias="SMTP_PASSWORD")
+    email_to: str = Field(default="", alias="EMAIL_TO")
+
     max_llm_calls_per_run: int = Field(default=25, alias="MAX_LLM_CALLS_PER_RUN")
 
     @field_validator(
-        "opik_workspace", "opik_project_name", "opik_url_override", "scout_model", "scout_tailor_model", mode="before"
+        "opik_workspace",
+        "opik_project_name",
+        "opik_url_override",
+        "telegram_chat_id",
+        "telegram_thread_id",
+        "smtp_user",
+        "email_to",
+        "scout_model",
+        "scout_tailor_model",
+        mode="before",
     )
     @classmethod
     def _drop_inline_comment(cls, value: object) -> object:
@@ -61,6 +83,16 @@ class Settings(BaseSettings):
             if value.startswith("#"):
                 return ""
         return value
+
+    @property
+    def has_telegram(self) -> bool:
+        """Whether Telegram notifications are configured."""
+        return bool(self.telegram_bot_token.get_secret_value() and self.telegram_chat_id)
+
+    @property
+    def has_email(self) -> bool:
+        """Whether email notifications are configured."""
+        return bool(self.smtp_user and self.smtp_password.get_secret_value() and self.email_to)
 
     @property
     def has_jsearch(self) -> bool:

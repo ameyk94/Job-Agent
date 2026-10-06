@@ -8,10 +8,12 @@ cd "$(dirname "$0")/../.."
 git pull --ff-only
 ~/.local/bin/uv sync --no-dev
 mkdir -p ~/.config/systemd/user
-install -m 644 deploy/hermes/job-scout.service ~/.config/systemd/user/
+install -m 644 deploy/hermes/job-scout.service deploy/hermes/job-scout-scan.service deploy/hermes/job-scout-scan.timer ~/.config/systemd/user/
 systemctl --user daemon-reload
-systemctl --user enable job-scout.service
+systemctl --user enable job-scout.service job-scout-scan.timer
 systemctl --user restart job-scout.service
+systemctl --user start job-scout-scan.timer
 sleep 5
 systemctl --user is-active job-scout.service
+systemctl --user list-timers job-scout-scan.timer --no-pager | head -3
 echo "UI: http://$(hostname):7860"

@@ -2,6 +2,14 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow the phases in CLAUDE.md.
 
+## Unreleased
+
+### Added
+- `job-scout run`: scheduled scan that reports only new jobs at or above `NOTIFY_MIN_SCORE`.
+- SQLite seen-jobs store (`private/scout.db`).
+- Telegram and email (SMTP) digests; a failed scan sends a "FAILED" alert.
+- systemd daily timer (08:00) in `deploy/hermes/`.
+
 ## [0.0.0] - Phase 0, unreleased
 
 ### Added
