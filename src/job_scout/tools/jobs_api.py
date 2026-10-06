@@ -162,7 +162,7 @@ class AdzunaSource:
             "app_id": self.app_id,
             "app_key": self.app_key,
             "results_per_page": min(limit, 50),
-            "what": query,
+            "what": f"{query} remote" if remote else query,
             "content-type": "application/json",
         }
         if location:

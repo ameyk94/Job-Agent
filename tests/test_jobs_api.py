@@ -179,3 +179,20 @@ def test_cache_source_keyword_match(tmp_path):
     jobs = src.fetch("machine learning python", None, None, False, 10)
     assert jobs[0].title == "Machine Learning Engineer"
     assert jobs[0].source == "cache"
+
+
+def test_adzuna_remote_flag_adds_remote_to_query(monkeypatch):
+    seen = {}
+
+    def fake_get(url, params, timeout):
+        seen.clear()
+        seen.update(params)
+        resp = MagicMock()
+        resp.json.return_value = {"results": []}
+        return resp
+
+    monkeypatch.setattr("job_scout.tools.jobs_api.httpx.get", fake_get)
+    AdzunaSource(app_id="i", app_key="k").fetch("data analyst", None, "ca", True, 10)
+    assert seen["what"] == "data analyst remote"
+    AdzunaSource(app_id="i", app_key="k").fetch("data analyst", "Toronto", "ca", False, 10)
+    assert seen["what"] == "data analyst" and seen["where"] == "Toronto"

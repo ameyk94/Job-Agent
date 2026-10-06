@@ -13,7 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 Seniority = Literal["junior", "mid", "senior", "lead", "unknown"]
-JobSourceName = Literal["jsearch", "adzuna", "remotive", "cache"]
+JobSourceName = Literal["jsearch", "adzuna", "remotive", "wwr", "cache"]
 
 
 class Profile(BaseModel):

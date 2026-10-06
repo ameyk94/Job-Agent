@@ -60,4 +60,7 @@ interfere with Hermes (it only reads updates). Or create a separate bot with @Bo
 **Email:** Gmail needs 2-step verification, then an App Password at
 <https://myaccount.google.com/apppasswords>. Use it as `SMTP_PASSWORD`, never your account password.
 
+`config/search.csv` defines the roles searched (in priority order). `MAX_JOBS_PER_SCAN` (default 40) bounds
+OpenRouter cost per scan; seen jobs are skipped, so later days reach new rows.
+
 Keep `.env` at mode 600. Free job APIs cap requests (JSearch ~200 per month), so keep the scan daily or less.

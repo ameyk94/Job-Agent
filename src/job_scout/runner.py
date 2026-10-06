@@ -15,7 +15,7 @@ from langchain_core.callbacks import UsageMetadataCallbackHandler
 
 from job_scout.config import get_settings
 from job_scout.graph import build_graph
-from job_scout.graph.schemas import Profile, RankedJob
+from job_scout.graph.schemas import JobPosting, Profile, RankedJob
 from job_scout.profile import extract_profile
 from job_scout.tracing import attach_cv, get_tracer, opik_url, trace_graph
 
@@ -68,6 +68,7 @@ def stream_search(
     thread_id: str,
     tags: list[str],
     selected_job_id: str | None = None,
+    preset_jobs: list[JobPosting] | None = None,
 ) -> Iterator[tuple[str, object]]:
     """Run the job-finding graph for an already-extracted profile.
 
@@ -84,6 +85,8 @@ def stream_search(
 
     graph = trace_graph(build_graph(), tracer)
     inputs = {"profile": profile, "cv_text": cv_text, "selected_job_id": selected_job_id}
+    if preset_jobs is not None:
+        inputs["preset_jobs"] = preset_jobs
     config = {"configurable": {"thread_id": thread_id}, "callbacks": callbacks, "recursion_limit": 25}
 
     result = RunResult(opik_url=opik_url(), profile=profile)

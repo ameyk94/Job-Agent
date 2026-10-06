@@ -6,7 +6,7 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from job_scout.graph.schemas import RankedJob
+from job_scout.graph.schemas import JobPosting, RankedJob
 
 
 def _connect(path: str | Path) -> sqlite3.Connection:
@@ -34,3 +34,10 @@ def mark_seen(path: str | Path, jobs: list[RankedJob]) -> None:
             "INSERT OR IGNORE INTO seen (job_id, title, company, url, fit_score) VALUES (?, ?, ?, ?, ?)",
             [(j.job.job_id, j.job.title, j.job.company, j.job.url, j.fit_score) for j in jobs],
         )
+
+
+def filter_unseen_jobs(path: str | Path, jobs: list[JobPosting]) -> list[JobPosting]:
+    """Return the postings whose ``job_id`` has not been recorded yet (before ranking)."""
+    with closing(_connect(path)) as con:
+        seen = {row[0] for row in con.execute("SELECT job_id FROM seen")}
+    return [j for j in jobs if j.job_id not in seen]

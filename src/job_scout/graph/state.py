@@ -13,7 +13,9 @@ class AgentState(TypedDict, total=False):
     ``total=False`` lets nodes return partial updates and lets the initial invoke
     payload set only the fields it has. ``llm_calls``, ``errors`` and
     ``jobs_sources`` back the call budget, non-crashing error handling and trace
-    metadata respectively. ``tailoring`` and ``selected_job_id`` are Phase 2.
+    metadata respectively. ``preset_jobs`` carries jobs found by the deterministic
+    search plan: when set, ``fetch_jobs`` skips the LLM and the reformulation loop is skipped.
+    ``tailoring`` and ``selected_job_id`` are Phase 2.
     """
 
     cv_text: str
@@ -27,3 +29,4 @@ class AgentState(TypedDict, total=False):
     jobs_sources: list[str]
     tailoring: TailoringPack | None
     selected_job_id: str | None
+    preset_jobs: list[JobPosting] | None

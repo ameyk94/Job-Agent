@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import job_scout.runner as runner_mod
 from job_scout.runner import run_once, stream_search
+from tests.conftest import make_job
 
 
 class _FakeGraph:
@@ -50,3 +51,13 @@ def test_stream_search_yields_result(monkeypatch, sample_profile):
     result = events[-1][1]
     assert result.jobs_sources == ["cache"]
     assert result.failed is False
+
+
+def test_preset_jobs_passed_to_graph_only_when_given(monkeypatch, sample_profile):
+    fake = _FakeGraph()
+    _patch(monkeypatch, fake)
+    jobs = [make_job("a", "Data Analyst", "Acme")]
+    list(stream_search(sample_profile, thread_id="t", tags=[], preset_jobs=jobs))
+    assert fake.captured_inputs["preset_jobs"] == jobs
+    list(stream_search(sample_profile, thread_id="t", tags=[]))
+    assert "preset_jobs" not in fake.captured_inputs
