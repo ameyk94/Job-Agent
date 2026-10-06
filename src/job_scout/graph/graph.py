@@ -41,6 +41,8 @@ def should_reformulate(state: AgentState) -> str:
     ``GOOD_FIT_THRESHOLD`` and we are under the reformulation cap. Reaching the
     cap with thin results is expected, not an error.
     """
+    if state.get("preset_jobs") is not None:
+        return END  # the search plan fixed the query; do not rewrite it
     ranked = state.get("ranked_jobs", [])
     good = sum(1 for r in ranked if r.fit_score >= GOOD_FIT_THRESHOLD)
     if good < MIN_GOOD_JOBS and state.get("reformulation_count", 0) < MAX_REFORMULATIONS:

@@ -157,3 +157,12 @@ def test_missing_cv_alerts(scan, monkeypatch, tmp_path):
     get_settings.cache_clear()
     assert cli.run() == 1
     assert scan["sent"] == ["Job Scout: scan FAILED"]
+
+
+def test_store_filter_unseen_jobs(tmp_path):
+    from job_scout.store import filter_unseen_jobs
+
+    db = tmp_path / "s.db"
+    a, b = ranked("a", 80), ranked("b", 75)
+    mark_seen(db, [a])
+    assert [j.job_id for j in filter_unseen_jobs(db, [a.job, b.job])] == ["b"]

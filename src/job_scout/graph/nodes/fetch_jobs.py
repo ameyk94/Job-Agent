@@ -46,7 +46,13 @@ def _build_prompt(state: AgentState) -> str:
 
 
 def fetch_jobs(state: AgentState) -> dict:
-    """Run the job search with LLM-chosen arguments and merge results into state."""
+    """Run the job search with LLM-chosen arguments and merge results into state.
+
+    If ``preset_jobs`` is in state (scheduled scan), use those jobs and make no LLM call.
+    """
+    preset = state.get("preset_jobs")
+    if preset is not None:
+        return {"jobs": preset, "jobs_sources": sorted({j.source for j in preset})}
     settings = get_settings()
     calls = state.get("llm_calls", 0)
     ensure_budget(calls, 1, settings.max_llm_calls_per_run)

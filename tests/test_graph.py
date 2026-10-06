@@ -42,3 +42,8 @@ def test_budget_allows_under_limit():
 def test_budget_raises_over_limit():
     with pytest.raises(LLMBudgetExceededError):
         ensure_budget(current_calls=24, planned=2, max_calls=25)
+
+
+def test_preset_jobs_never_reformulate():
+    assert should_reformulate({"preset_jobs": [], "ranked_jobs": []}) == END
+    assert should_reformulate({"ranked_jobs": []}) == "reformulate_query"

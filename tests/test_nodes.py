@@ -74,3 +74,14 @@ def test_reformulate_increments_counter(monkeypatch, sample_profile):
     assert out["search_query"] == "data analyst"
     assert out["reformulation_count"] == 1
     assert out["llm_calls"] == 4
+
+
+def test_fetch_jobs_uses_preset_jobs_without_llm(monkeypatch, sample_profile):
+    def no_llm(*a, **k):
+        raise AssertionError("LLM must not be called when preset_jobs is set")
+
+    monkeypatch.setattr(fetch_mod, "get_chat_model", no_llm)
+    preset = [make_job("a", "Data Analyst", "Acme", source="adzuna"), make_job("b", "Data Scientist", "Beta", source="wwr")]
+    out = fetch_mod.fetch_jobs({"profile": sample_profile, "preset_jobs": preset})
+    assert out["jobs"] == preset
+    assert out["jobs_sources"] == ["adzuna", "wwr"]
