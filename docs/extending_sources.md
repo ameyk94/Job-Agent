@@ -91,3 +91,14 @@ actors (e.g. Apify LinkedIn actors), **even as optional adapters**:
 
 If you wire up a scraper privately, you accept those risks yourself. The
 supported, reproducible path is official APIs behind the `JobSource` interface.
+
+## Scheduled scan sources (Phase 2a)
+
+The scheduled scan (`job-scout run`) does not use the LLM to choose queries. It runs every row of
+`config/search.csv` against the sources returned by `search_plan.default_sources()`. To add a source:
+
+1. Write an adapter with `name` and `fetch(query, location, country, remote, limit)`.
+   `job_scout/tools/sources/wwr.py` is the pattern for a keyless RSS source (parse with `defusedxml`).
+2. Add `"<name>"` to `JobSourceName` in `graph/schemas.py`.
+3. Add it to `default_sources()`. Set `remote_only = True` on the class if it only lists remote jobs.
+4. Test it offline with a recorded feed or JSON.

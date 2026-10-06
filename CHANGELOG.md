@@ -9,6 +9,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow the pha
 - SQLite seen-jobs store (`private/scout.db`).
 - Telegram and email (SMTP) digests; a failed scan sends a "FAILED" alert.
 - systemd daily timer (08:00) in `deploy/hermes/`.
+- Adzuna Canada and We Work Remotely sources, driven by `config/search.csv` (roles in priority order).
+- Scan ranks at most `MAX_JOBS_PER_SCAN` (40) unseen jobs; seen jobs are dropped before the cap and before any LLM call.
+- Digest footer shows jobs per source; a scan where every source returns 0 jobs sends a FAILED alert.
+- `scripts/baseline_sources.py` and `docs/findings/phase2a-sources.md`.
+
+### Changed
+- Adzuna adds "remote" to the query when the remote flag is set.
 
 ## [0.0.0] - Phase 0, unreleased
 
