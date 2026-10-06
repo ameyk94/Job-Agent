@@ -12,6 +12,8 @@ import re
 import xml.etree.ElementTree as ET
 
 import httpx
+from defusedxml import ElementTree as SafeET
+from defusedxml.common import DefusedXmlException
 
 from job_scout.graph.schemas import JobPosting
 from job_scout.tools.jobs_api import _truncate
@@ -74,8 +76,8 @@ class WWRSource:
             try:
                 resp = httpx.get(url, timeout=self.timeout, follow_redirects=True, headers=_HEADERS)
                 resp.raise_for_status()
-                root = ET.fromstring(resp.content)
-            except (httpx.HTTPError, ET.ParseError):
+                root = SafeET.fromstring(resp.content)
+            except (httpx.HTTPError, ET.ParseError, DefusedXmlException):
                 continue
             for el in root.iter("item"):
                 job = _to_posting(el)

@@ -872,6 +872,7 @@ name = "job-scout"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "defusedxml" },
     { name = "fpdf2" },
     { name = "gradio" },
     { name = "httpx" },
@@ -897,6 +898,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "fpdf2", specifier = ">=2.8" },
     { name = "gradio", specifier = ">=5" },
     { name = "httpx", specifier = ">=0.27" },

@@ -95,3 +95,12 @@ def test_network_error_returns_empty(monkeypatch):
 def test_malformed_xml_returns_empty(monkeypatch):
     monkeypatch.setattr(wwr.httpx, "get", lambda url, **kw: _Resp(b"<rss><item>"))
     assert WWRSource(feeds=("https://x/a.rss",)).fetch("Data Scientist", None, "ca", True, 10) == []
+
+
+def test_entity_expansion_attack_is_rejected(monkeypatch):
+    bomb = (
+        b'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY a "aaaa"><!ENTITY b "&a;&a;&a;&a;">]>'
+        b"<rss><item><title>&b;</title></item></rss>"
+    )
+    monkeypatch.setattr(wwr.httpx, "get", lambda url, **kw: _Resp(bomb))
+    assert WWRSource(feeds=("https://x/a.rss",)).fetch("Data", None, "ca", True, 10) == []
