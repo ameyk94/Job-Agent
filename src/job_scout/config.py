@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     scout_cv_path: str = Field(default="private/cv.pdf", alias="SCOUT_CV_PATH")
     scout_db_path: str = Field(default="private/scout.db", alias="SCOUT_DB_PATH")
     notify_min_score: int = Field(default=70, alias="NOTIFY_MIN_SCORE")
+    search_plan_path: str = Field(default="config/search.csv", alias="SEARCH_PLAN_PATH")
+    max_jobs_per_scan: int = Field(default=40, alias="MAX_JOBS_PER_SCAN")
     telegram_bot_token: SecretStr = Field(default=SecretStr(""), alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str = Field(default="", alias="TELEGRAM_CHAT_ID")
     telegram_thread_id: str = Field(default="", alias="TELEGRAM_THREAD_ID")

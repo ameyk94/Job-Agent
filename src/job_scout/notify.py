@@ -20,7 +20,7 @@ TELEGRAM_LIMIT = 4096  # Bot API max message length
 MAX_JOBS = 10
 
 
-def build_digest(jobs: list[RankedJob]) -> tuple[str, str]:
+def build_digest(jobs: list[RankedJob], source_counts: dict[str, int] | None = None) -> tuple[str, str]:
     """Return ``(subject, body)`` for the best ``MAX_JOBS`` jobs, highest score first."""
     jobs = sorted(jobs, key=lambda j: j.fit_score, reverse=True)
     total = len(jobs)
@@ -37,6 +37,8 @@ def build_digest(jobs: list[RankedJob]) -> tuple[str, str]:
     body = "\n\n".join(blocks)
     if total > MAX_JOBS:
         body += f"\n\n+{total - MAX_JOBS} more in the app."
+    if source_counts:
+        body += "\n\nSources: " + ", ".join(f"{name} {n}" for name, n in source_counts.items())
     return subject, body
 
 

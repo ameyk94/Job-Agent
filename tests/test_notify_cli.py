@@ -112,17 +112,38 @@ def test_email_sends_via_starttls(monkeypatch):
 
 @pytest.fixture
 def scan(monkeypatch, tmp_path, sample_profile):
-    """Wire `cli.run` to a fake CV, fake agent, and a recording notifier."""
+    """Wire `cli.run` to a fake CV, fake plan, fake agent, and a recording notifier."""
     cv = tmp_path / "cv.pdf"
     cv.write_bytes(b"x")
     monkeypatch.setenv("SCOUT_CV_PATH", str(cv))
     monkeypatch.setenv("SCOUT_DB_PATH", str(tmp_path / "s.db"))
     monkeypatch.setattr(cli, "extract_cv_text", lambda p: "cv text")
     monkeypatch.setattr(cli, "extract_profile", lambda *a, **k: sample_profile)
-    state = {"result": RunResult(ranked_jobs=[ranked("a", 90), ranked("b", 50)]), "sent": [], "ok": True}
+    state = {
+        "result": RunResult(ranked_jobs=[ranked("a", 90), ranked("b", 50)]),
+        "found": [ranked("a", 0).job, ranked("b", 0).job],
+        "counts": {"adzuna": 2, "wwr": 0},
+        "sent": [],
+        "ok": True,
+        "preset": None,
+        "bodies": [],
+    }
 
-    monkeypatch.setattr(cli, "stream_search", lambda *a, **k: iter([("result", state["result"])]))
-    monkeypatch.setattr(cli, "notify", lambda s, subj, body: state["sent"].append(subj) or {"telegram": state["ok"]})
+    def fake_stream(*a, **k):
+        state["preset"] = k.get("preset_jobs")
+        return iter([("result", state["result"])])
+
+    monkeypatch.setattr(cli, "load_plan", lambda p: ["row"])
+    monkeypatch.setattr(cli, "default_sources", lambda: [])
+    monkeypatch.setattr(cli, "run_plan", lambda rows, sources: (state["found"], state["counts"]))
+    monkeypatch.setattr(cli, "stream_search", fake_stream)
+
+    def fake_notify(s, subj, body):
+        state["sent"].append(subj)
+        state["bodies"].append(body)
+        return {"telegram": state["ok"]}
+
+    monkeypatch.setattr(cli, "notify", fake_notify)
     return state
 
 
@@ -166,3 +187,49 @@ def test_store_filter_unseen_jobs(tmp_path):
     a, b = ranked("a", 80), ranked("b", 75)
     mark_seen(db, [a])
     assert [j.job_id for j in filter_unseen_jobs(db, [a.job, b.job])] == ["b"]
+
+
+def test_digest_has_source_counts_footer():
+    subject, body = notify_mod.build_digest([ranked("a", 90)], {"adzuna": 31, "wwr": 0})
+    assert body.endswith("Sources: adzuna 31, wwr 0")
+
+
+def test_scan_passes_only_unseen_jobs_capped_to_preset(scan, monkeypatch, tmp_path):
+    monkeypatch.setenv("MAX_JOBS_PER_SCAN", "1")
+    get_settings.cache_clear()
+    mark_seen(tmp_path / "s.db", [ranked("a", 90)])  # "a" already seen
+    assert cli.run() == 0
+    assert [j.job_id for j in scan["preset"]] == ["b"]
+
+
+def test_scan_cap_default_is_40(scan):
+    scan["found"] = [make_job(str(i), f"Data Analyst {i}", "Acme") for i in range(60)]
+    assert cli.run() == 0
+    assert len(scan["preset"]) == 40
+
+
+def test_nothing_new_skips_llm_and_notification(scan, monkeypatch, tmp_path):
+    mark_seen(tmp_path / "s.db", [ranked("a", 90), ranked("b", 50)])
+
+    def no_llm(*a, **k):
+        raise AssertionError("no LLM call when nothing is new")
+
+    monkeypatch.setattr(cli, "extract_profile", no_llm)
+    assert cli.run() == 0
+    assert scan["sent"] == []
+
+
+def test_all_sources_empty_alerts(scan):
+    scan["found"], scan["counts"] = [], {"adzuna": 0, "wwr": 0}
+    assert cli.run() == 1
+    assert scan["sent"] == ["Job Scout: scan FAILED"]
+    assert "adzuna 0" in scan["bodies"][0]
+
+
+def test_bad_plan_alerts(scan, monkeypatch):
+    def bad(path):
+        raise ValueError("config/search.csv: row 3: blank role")
+
+    monkeypatch.setattr(cli, "load_plan", bad)
+    assert cli.run() == 1
+    assert "row 3" in scan["bodies"][0]
