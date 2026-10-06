@@ -61,7 +61,8 @@ that do work and merged: `remote-jobs.rss` (all categories), `remote-product-job
 `all-other-remote-jobs.rss`. The feed list is a constant in `wwr.py`.
 
 - Parse with `xml.etree.ElementTree` (stdlib). Item `<title>` is `Company: Job title`; split on the first colon.
-- Keep an item only if the job title contains any word of the role (case-insensitive) AND its `<region>` is
+- Keep an item only if the job title contains every word of the role (case-insensitive; "any word" would match every
+  "Data Engineer") AND its `<region>` is
   `Anywhere in the World`, or mentions `Canada` or `North America`. Region values such as `USA Only` are
   dropped, because a Canadian cannot assume eligibility (see ADR-006 and the tier-5 research task).
 - Return `JobPosting(source="wwr", remote=True, location=<region>)`. Errors and parse failures return `[]`.
