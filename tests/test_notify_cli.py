@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import smtplib
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -11,7 +12,7 @@ import job_scout.notify as notify_mod
 from job_scout.config import get_settings
 from job_scout.graph.schemas import RankedJob
 from job_scout.runner import RunResult
-from job_scout.store import filter_unseen, mark_seen
+from job_scout.store import filter_unseen_jobs, job_key, mark_seen
 from tests.conftest import make_job
 
 
@@ -25,21 +26,37 @@ def ranked(job_id: str, score: int) -> RankedJob:
     )
 
 
-def test_store_reports_only_unseen(tmp_path):
+T0 = datetime(2026, 10, 1, 8, 0, tzinfo=UTC)
+
+
+def test_job_key_ignores_case_and_spacing():
+    assert job_key("Acme  Corp", "Data  Analyst") == job_key("acme corp", "data analyst")
+
+
+def test_store_repost_window(tmp_path):
     db = tmp_path / "s.db"
-    jobs = [ranked("a", 80), ranked("b", 75)]
-    assert len(filter_unseen(db, jobs)) == 2
-    mark_seen(db, jobs[:1])
-    mark_seen(db, jobs[:1])  # idempotent
-    assert [j.job.job_id for j in filter_unseen(db, jobs)] == ["b"]
+    a = ranked("a", 80)
+    assert [j.job_id for j in filter_unseen_jobs(db, [a.job], 30, now=T0)] == ["a"]
+    mark_seen(db, [a], now=T0)
+    assert filter_unseen_jobs(db, [a.job], 30, now=T0 + timedelta(days=29)) == []
+    assert [j.job_id for j in filter_unseen_jobs(db, [a.job], 30, now=T0 + timedelta(days=31))] == ["a"]
+    mark_seen(db, [a], now=T0 + timedelta(days=31))  # resurfaced: window restarts
+    assert filter_unseen_jobs(db, [a.job], 30, now=T0 + timedelta(days=45)) == []
 
 
-def test_digest_sorted_and_capped():
+def test_repost_with_new_id_stays_hidden_inside_window(tmp_path):
+    db = tmp_path / "s.db"
+    mark_seen(db, [ranked("a", 80)], now=T0)
+    repost = make_job("zzz", "Data Analyst a", "Acme")  # same company + title, new id
+    assert filter_unseen_jobs(db, [repost], 30, now=T0 + timedelta(days=3)) == []
+
+
+def test_digest_lists_every_job_sorted():
     jobs = [ranked(str(i), 70 + i) for i in range(12)]
     subject, body = notify_mod.build_digest(jobs)
     assert subject == "Job Scout: 12 new jobs"
     assert body.startswith("81  Data Analyst 11")
-    assert "+2 more" in body
+    assert body.count("Data Analyst") == 12 and "more" not in body
     assert "Matches: python, sql" in body and "Gaps: dbt" in body
 
 
@@ -127,6 +144,8 @@ def scan(monkeypatch, tmp_path, sample_profile):
         "ok": True,
         "preset": None,
         "bodies": [],
+        "email": False,
+        "digest_jobs": None,
     }
 
     def fake_stream(*a, **k):
@@ -144,6 +163,13 @@ def scan(monkeypatch, tmp_path, sample_profile):
         return {"telegram": state["ok"]}
 
     monkeypatch.setattr(cli, "notify", fake_notify)
+
+    def fake_send_digest(settings, jobs, counts):
+        state["sent"].append(notify_mod.build_digest(jobs)[0])
+        state["digest_jobs"] = jobs
+        return {"telegram": state["ok"], "email": state["email"]}
+
+    monkeypatch.setattr(cli, "send_digest", fake_send_digest)
     return state
 
 
@@ -180,18 +206,58 @@ def test_missing_cv_alerts(scan, monkeypatch, tmp_path):
     assert scan["sent"] == ["Job Scout: scan FAILED"]
 
 
-def test_store_filter_unseen_jobs(tmp_path):
-    from job_scout.store import filter_unseen_jobs
-
-    db = tmp_path / "s.db"
-    a, b = ranked("a", 80), ranked("b", 75)
-    mark_seen(db, [a])
-    assert [j.job_id for j in filter_unseen_jobs(db, [a.job, b.job])] == ["b"]
-
-
 def test_digest_has_source_counts_footer():
     subject, body = notify_mod.build_digest([ranked("a", 90)], {"adzuna": 31, "wwr": 0})
     assert body.endswith("Sources: adzuna 31, wwr 0")
+
+
+def fat(i: int) -> RankedJob:
+    """A job with realistic, long skill and gap lists (about 450 characters in the digest)."""
+    return ranked(str(i), 70 + i % 30).model_copy(
+        update={
+            "matched_skills": [f"skill number {k} for job {i}" for k in range(6)],
+            "gaps": [f"requirement number {k} that is missing" for k in range(4)],
+        }
+    )
+
+
+def test_telegram_messages_fit_limit_and_keep_every_job():
+    jobs = [fat(i) for i in range(40)]
+    msgs = notify_mod.telegram_messages(jobs, {"adzuna": 40})
+    assert len(msgs) > 1
+    assert all(len(m) <= notify_mod.TELEGRAM_LIMIT for m in msgs)
+    assert msgs[0].startswith(f"Job Scout: 40 new jobs (1/{len(msgs)})")
+    assert msgs[-1].startswith(f"Job Scout: 40 new jobs ({len(msgs)}/{len(msgs)})")
+    assert sum(m.count("Data Analyst") for m in msgs) == 40
+    assert msgs[-1].endswith("Sources: adzuna 40")
+
+
+def test_single_telegram_message_has_no_part_numbers():
+    msgs = notify_mod.telegram_messages([ranked("a", 90)], None)
+    assert len(msgs) == 1 and msgs[0].startswith("Job Scout: 1 new job\n\n") and "(1/" not in msgs[0]
+
+
+def test_both_channels_carry_every_job(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "42")
+    monkeypatch.setenv("SMTP_USER", "me@example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "pw")
+    monkeypatch.setenv("EMAIL_TO", "me@example.com")
+    sent = {"tg": [], "email": None}
+    monkeypatch.setattr(notify_mod, "send_telegram", lambda s, text: sent["tg"].append(text) or True)
+    monkeypatch.setattr(notify_mod, "send_email", lambda s, subject, body: sent.update(email=body) or True)
+    jobs = [fat(i) for i in range(25)]
+    assert notify_mod.send_digest(get_settings(), jobs, None) == {"telegram": True, "email": True}
+    assert sent["email"].count("Data Analyst") == 25
+    assert sum(m.count("Data Analyst") for m in sent["tg"]) == 25
+
+
+def test_partial_telegram_failure_is_not_delivered(monkeypatch):
+    results = iter([True, False, True])
+    monkeypatch.setattr(notify_mod, "send_telegram", lambda s, text: next(results))
+    monkeypatch.setattr(notify_mod, "send_email", lambda s, subject, body: False)
+    jobs = [fat(i) for i in range(40)]
+    assert notify_mod.send_digest(get_settings(), jobs, None) == {"telegram": False, "email": False}
 
 
 def test_scan_passes_only_unseen_jobs_capped_to_preset(scan, monkeypatch, tmp_path):
@@ -233,3 +299,27 @@ def test_bad_plan_alerts(scan, monkeypatch):
     monkeypatch.setattr(cli, "load_plan", bad)
     assert cli.run() == 1
     assert "row 3" in scan["bodies"][0]
+
+
+def test_senior_jobs_never_reach_ranking_or_the_cap(scan, monkeypatch, tmp_path):
+    monkeypatch.setenv("MAX_JOBS_PER_SCAN", "1")
+    get_settings.cache_clear()
+    scan["found"] = [make_job("s", "Senior Data Analyst", "Acme"), make_job("k", "Data Analyst", "Beta")]
+    assert cli.run() == 0
+    assert [j.job_id for j in scan["preset"]] == ["k"]  # the senior job did not use the cap slot
+
+
+def test_all_senior_means_no_llm_call(scan, monkeypatch):
+    scan["found"] = [make_job("s", "Senior Data Analyst", "Acme")]
+
+    def no_llm(*a, **k):
+        raise AssertionError("no LLM when everything is senior")
+
+    monkeypatch.setattr(cli, "extract_profile", no_llm)
+    assert cli.run() == 0 and scan["sent"] == []
+
+
+def test_repost_with_new_id_is_not_ranked_again(scan, tmp_path):
+    mark_seen(tmp_path / "s.db", [ranked("a", 90)])
+    scan["found"] = [make_job("new-id", "Data Analyst a", "Acme")]  # same company + title as seen "a"
+    assert cli.run() == 0 and scan["preset"] is None

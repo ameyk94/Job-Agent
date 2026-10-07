@@ -11,6 +11,7 @@ import sys
 
 from job_scout.config import get_settings
 from job_scout.search_plan import COUNTRY, NATIONWIDE, default_sources, load_plan, run_plan
+from job_scout.seniority import drop_senior
 
 SENIOR = re.compile(r"\b(senior|sr\.?|staff|lead|principal|manager|director|head|vp)\b", re.I)
 ENTRY = re.compile(r"\b(junior|jr\.?|entry|graduate|associate|intern|co-?op)\b", re.I)
@@ -28,6 +29,10 @@ def main() -> None:
     print("per source (after de-dup):", counts)
     print(f"senior-looking titles: {senior} of {len(jobs)} ({100 * senior // n}%)")
     print(f"entry-looking titles:  {entry} of {len(jobs)} ({100 * entry // n}%)")
+    kept, dropped = drop_senior(jobs)
+    print(f"seniority filter: keeps {len(kept)}, drops {len(dropped)}")
+    for j in dropped[:15]:
+        print(f"  dropped: {j.title}")
     print("per row (jobs returned before de-duplication):")
     for row in rows:
         where = None if not row.location or row.location.lower() == NATIONWIDE else row.location

@@ -45,3 +45,19 @@ Plan: `config/search.csv`, 10 rows. No LLM was called; these are job counts only
 The "before" is the 2026-10-06 dry run with the old LLM-chosen query: 18 jobs ranked from Remotive only,
 2 of 18 above score 70, both titled Senior. Quality numbers (score distribution, share of entry/mid roles
 in the digest) will be recorded after the first live scans with the new plan.
+
+## Seniority filter (Phase 2b), measured 2026-10-07
+
+Same plan, live data (164 unique jobs this run; the job market moved slightly since yesterday's 167).
+
+| Measure | Value |
+|---|---|
+| Unique jobs | 164 (162 Adzuna, 2 WWR) |
+| Dropped by the title filter | 54 (33%) |
+| Kept for ranking | 110 |
+| Senior-looking titles including Manager | 62 (37%) |
+
+The filter drops fewer than the 62 senior-looking titles because Manager is kept by the owner's choice (8 jobs).
+Spot check of the first 15 dropped titles: Director, Staff, Senior, Sr. and one "Sr. Software Engineer (ML
+Researcher)". All are correct drops. Not yet measured: false drops (a mid-level role titled Senior), which the
+scan log lets the owner review (`senior_dropped=N`).

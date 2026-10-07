@@ -14,8 +14,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow the pha
 - Digest footer shows jobs per source; a scan where every source returns 0 jobs sends a FAILED alert.
 - `scripts/baseline_sources.py` and `docs/findings/phase2a-sources.md`.
 
+- Seniority filter: titles with senior, sr, staff, lead, principal, director, head, vp, vice president or chief are
+  dropped before ranking. Manager is kept.
+- Repost window: seen jobs are keyed on company + title and expire after `REPOST_GAP_DAYS` (30).
+- The digest lists every job above the cutoff on both channels. Telegram splits it into numbered messages under
+  its 4096-character limit; email is one message.
+
 ### Changed
 - Adzuna adds "remote" to the query when the remote flag is set.
+- Adzuna logs a warning with the HTTP status on failure and retries once after 2 s. A transient error used to drop a whole
+  query silently (the 2026-10-07 08:00 scan found 48 jobs; the same plan found 164 an hour later).
+- Seen-jobs store moved to a new table `seen_jobs` (old `seen` table is ignored). Digest no longer says "more in the app".
 
 ## [0.0.0] - Phase 0, unreleased
 

@@ -13,7 +13,9 @@ sources are included (see ``docs/extending_sources.md``).
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
 from pathlib import Path
 from typing import Protocol
 
@@ -24,6 +26,8 @@ from job_scout.config import get_settings
 from job_scout.graph.schemas import JobPosting
 
 DESCRIPTION_LIMIT = 4000
+RETRY_DELAY_S = 2.0
+logger = logging.getLogger(__name__)
 DEFAULT_LIMIT = 25
 DEFAULT_COUNTRY = "us"
 CACHE_PATH = Path(__file__).resolve().parent.parent.parent.parent / "data" / "cached_jobs.json"
@@ -167,11 +171,19 @@ class AdzunaSource:
         }
         if location:
             params["where"] = location
-        try:
-            resp = httpx.get(f"{self.BASE}/{code}/search/1", params=params, timeout=self.timeout)
-            resp.raise_for_status()
-            data = resp.json()
-        except (httpx.HTTPError, json.JSONDecodeError, ValueError):
+        data = None
+        for attempt in (1, 2):  # one retry: a transient error otherwise silently drops a whole query
+            try:
+                resp = httpx.get(f"{self.BASE}/{code}/search/1", params=params, timeout=self.timeout)
+                resp.raise_for_status()
+                data = resp.json()
+                break
+            except (httpx.HTTPError, json.JSONDecodeError, ValueError) as exc:
+                status = getattr(getattr(exc, "response", None), "status_code", "")
+                logger.warning("adzuna %r failed (attempt %d): %s %s", query, attempt, type(exc).__name__, status)
+                if attempt == 1:
+                    time.sleep(RETRY_DELAY_S)
+        if data is None:
             return []
         return [self._to_posting(r, code) for r in data.get("results", [])]
 

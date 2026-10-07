@@ -9,10 +9,11 @@ import uuid
 from pathlib import Path
 
 from job_scout.config import Settings, get_settings
-from job_scout.notify import build_digest, notify
+from job_scout.notify import build_digest, notify, send_digest
 from job_scout.profile import extract_profile
 from job_scout.runner import stream_search
 from job_scout.search_plan import default_sources, load_plan, run_plan
+from job_scout.seniority import drop_senior
 from job_scout.store import filter_unseen_jobs, mark_seen
 from job_scout.tools.cv_reader import extract_cv_text
 
@@ -33,9 +34,10 @@ def run(dry_run: bool = False) -> int:
     sources_line = ", ".join(f"{name} {n}" for name, n in counts.items())
     if not found:
         return _fail(settings, f"all sources returned 0 jobs ({sources_line})", dry_run)
-    # Drop seen jobs before the cap, so each day reaches the next unseen jobs.
-    fresh = filter_unseen_jobs(settings.scout_db_path, found)[: settings.max_jobs_per_scan]
-    logger.info("found=%d unseen=%d sources: %s", len(found), len(fresh), sources_line)
+    # Drop senior titles, then recently reported jobs, then cap: each day reaches the next unseen entry/mid jobs.
+    kept, senior = drop_senior(found)
+    fresh = filter_unseen_jobs(settings.scout_db_path, kept, settings.repost_gap_days)[: settings.max_jobs_per_scan]
+    logger.info("found=%d senior_dropped=%d unseen=%d sources: %s", len(found), len(senior), len(fresh), sources_line)
     if not fresh:
         return 0  # nothing new: no LLM calls, no message
 
@@ -55,17 +57,19 @@ def run(dry_run: bool = False) -> int:
     if result is None or result.failed:
         return _fail(settings, result.error_message if result else "no result", dry_run)
 
-    ranked = result.ranked_jobs  # all unseen: seen jobs were dropped before ranking
-    good = [j for j in ranked if j.fit_score >= settings.notify_min_score]
+    ranked = result.ranked_jobs  # all unseen: senior and recently reported jobs were dropped before ranking
+    good = sorted((j for j in ranked if j.fit_score >= settings.notify_min_score), key=lambda j: j.fit_score, reverse=True)
     logger.info("ranked=%d above_threshold=%d", len(ranked), len(good))
     if good:
-        subject, body = build_digest(good, counts)
         if dry_run:
+            subject, body = build_digest(good, counts)
             print(subject, body, sep="\n\n")
-        elif not any(notify(settings, subject, body).values()):
-            # Nothing delivered: leave the jobs unseen so the next run retries.
-            logger.error("no notification channel succeeded")
-            return 1
+        else:
+            sent = send_digest(settings, good, counts)
+            if not any(sent.values()):
+                # Nothing delivered: leave the jobs unseen so the next run retries.
+                logger.error("no notification channel succeeded")
+                return 1
     if not dry_run:
         mark_seen(settings.scout_db_path, ranked)
     return 0

@@ -17,29 +17,71 @@ from job_scout.graph.schemas import RankedJob
 logger = logging.getLogger(__name__)
 
 TELEGRAM_LIMIT = 4096  # Bot API max message length
-MAX_JOBS = 10
+_CHUNK = TELEGRAM_LIMIT - 120  # room for the "(i/n)" header
 
 
-def build_digest(jobs: list[RankedJob], source_counts: dict[str, int] | None = None) -> tuple[str, str]:
-    """Return ``(subject, body)`` for the best ``MAX_JOBS`` jobs, highest score first."""
-    jobs = sorted(jobs, key=lambda j: j.fit_score, reverse=True)
-    total = len(jobs)
-    subject = f"Job Scout: {total} new job{'s' if total != 1 else ''}"
-    blocks = []
-    for j in jobs[:MAX_JOBS]:
+def _blocks(jobs: list[RankedJob]) -> list[str]:
+    """One text block per job, highest score first."""
+    out = []
+    for j in sorted(jobs, key=lambda j: j.fit_score, reverse=True):
         where = "Remote" if j.job.remote else j.job.location
         lines = [f"{j.fit_score}  {j.job.title} @ {j.job.company} ({where})", j.job.url]
         if j.matched_skills:
             lines.append("Matches: " + ", ".join(j.matched_skills[:6]))
         if j.gaps:
             lines.append("Gaps: " + ", ".join(j.gaps[:4]))
-        blocks.append("\n".join(lines))
-    body = "\n\n".join(blocks)
-    if total > MAX_JOBS:
-        body += f"\n\n+{total - MAX_JOBS} more in the app."
+        out.append("\n".join(lines))
+    return out
+
+
+def _subject(n: int) -> str:
+    return f"Job Scout: {n} new job{'s' if n != 1 else ''}"
+
+
+def _sources_line(source_counts: dict[str, int] | None) -> str:
+    if not source_counts:
+        return ""
+    return "Sources: " + ", ".join(f"{name} {n}" for name, n in source_counts.items())
+
+
+def build_digest(jobs: list[RankedJob], source_counts: dict[str, int] | None = None) -> tuple[str, str]:
+    """Return ``(subject, body)`` listing every job, highest score first."""
+    parts = _blocks(jobs)
     if source_counts:
-        body += "\n\nSources: " + ", ".join(f"{name} {n}" for name, n in source_counts.items())
-    return subject, body
+        parts.append(_sources_line(source_counts))
+    return _subject(len(jobs)), "\n\n".join(parts)
+
+
+def telegram_messages(jobs: list[RankedJob], source_counts: dict[str, int] | None = None) -> list[str]:
+    """Pack every job into as few Telegram messages as fit the 4096-character limit.
+
+    Jobs are never split across messages. With more than one message each starts with ``(i/n)``.
+    """
+    subject = _subject(len(jobs))
+    parts = _blocks(jobs)
+    if source_counts:
+        parts.append(_sources_line(source_counts))
+    chunks: list[str] = []
+    cur = ""
+    for part in parts:
+        if cur and len(cur) + 2 + len(part) > _CHUNK:
+            chunks.append(cur)
+            cur = ""
+        cur = f"{cur}\n\n{part}" if cur else part
+    chunks.append(cur)
+    if len(chunks) == 1:
+        return [f"{subject}\n\n{chunks[0]}"]
+    return [f"{subject} ({i}/{len(chunks)})\n\n{c}" for i, c in enumerate(chunks, start=1)]
+
+
+def send_digest(settings: Settings, jobs: list[RankedJob], source_counts: dict[str, int] | None) -> dict[str, bool]:
+    """Send every job to both channels: one email, and as many Telegram messages as needed.
+
+    Telegram counts as delivered only if all of its messages were sent.
+    """
+    subject, email_body = build_digest(jobs, source_counts)
+    telegram_ok = all(send_telegram(settings, m) for m in telegram_messages(jobs, source_counts))
+    return {"telegram": telegram_ok, "email": send_email(settings, subject, email_body)}
 
 
 def send_telegram(settings: Settings, text: str) -> bool:
