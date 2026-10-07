@@ -51,12 +51,12 @@ def test_repost_with_new_id_stays_hidden_inside_window(tmp_path):
     assert filter_unseen_jobs(db, [repost], 30, now=T0 + timedelta(days=3)) == []
 
 
-def test_digest_sorted_and_capped():
+def test_digest_lists_every_job_sorted():
     jobs = [ranked(str(i), 70 + i) for i in range(12)]
-    subject, body = notify_mod.build_digest(jobs, more_note="more.")
+    subject, body = notify_mod.build_digest(jobs)
     assert subject == "Job Scout: 12 new jobs"
     assert body.startswith("81  Data Analyst 11")
-    assert "+2 more" in body
+    assert body.count("Data Analyst") == 12 and "more" not in body
     assert "Matches: python, sql" in body and "Gaps: dbt" in body
 
 
@@ -211,29 +211,53 @@ def test_digest_has_source_counts_footer():
     assert body.endswith("Sources: adzuna 31, wwr 0")
 
 
-def test_email_digest_lists_every_job_telegram_lists_ten(monkeypatch):
+def fat(i: int) -> RankedJob:
+    """A job with realistic, long skill and gap lists (about 450 characters in the digest)."""
+    return ranked(str(i), 70 + i % 30).model_copy(
+        update={
+            "matched_skills": [f"skill number {k} for job {i}" for k in range(6)],
+            "gaps": [f"requirement number {k} that is missing" for k in range(4)],
+        }
+    )
+
+
+def test_telegram_messages_fit_limit_and_keep_every_job():
+    jobs = [fat(i) for i in range(40)]
+    msgs = notify_mod.telegram_messages(jobs, {"adzuna": 40})
+    assert len(msgs) > 1
+    assert all(len(m) <= notify_mod.TELEGRAM_LIMIT for m in msgs)
+    assert msgs[0].startswith(f"Job Scout: 40 new jobs (1/{len(msgs)})")
+    assert msgs[-1].startswith(f"Job Scout: 40 new jobs ({len(msgs)}/{len(msgs)})")
+    assert sum(m.count("Data Analyst") for m in msgs) == 40
+    assert msgs[-1].endswith("Sources: adzuna 40")
+
+
+def test_single_telegram_message_has_no_part_numbers():
+    msgs = notify_mod.telegram_messages([ranked("a", 90)], None)
+    assert len(msgs) == 1 and msgs[0].startswith("Job Scout: 1 new job\n\n") and "(1/" not in msgs[0]
+
+
+def test_both_channels_carry_every_job(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "42")
     monkeypatch.setenv("SMTP_USER", "me@example.com")
     monkeypatch.setenv("SMTP_PASSWORD", "pw")
     monkeypatch.setenv("EMAIL_TO", "me@example.com")
-    sent = {}
-    monkeypatch.setattr(notify_mod, "send_telegram", lambda s, text: sent.update(tg=text) or True)
+    sent = {"tg": [], "email": None}
+    monkeypatch.setattr(notify_mod, "send_telegram", lambda s, text: sent["tg"].append(text) or True)
     monkeypatch.setattr(notify_mod, "send_email", lambda s, subject, body: sent.update(email=body) or True)
-    jobs = [ranked(str(i), 70 + i % 30) for i in range(25)]
-    result = notify_mod.send_digest(get_settings(), jobs, {"adzuna": 25})
-    assert result == {"telegram": True, "email": True}
-    assert sent["email"].count("Data Analyst") == 25 and "more" not in sent["email"].split("Sources")[0]
-    assert sent["tg"].count("Data Analyst") == 10 and "+15 more: see the email." in sent["tg"]
+    jobs = [fat(i) for i in range(25)]
+    assert notify_mod.send_digest(get_settings(), jobs, None) == {"telegram": True, "email": True}
+    assert sent["email"].count("Data Analyst") == 25
+    assert sum(m.count("Data Analyst") for m in sent["tg"]) == 25
 
 
-def test_telegram_only_says_overflow_not_shown(monkeypatch):
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
-    monkeypatch.setenv("TELEGRAM_CHAT_ID", "42")
-    sent = {}
-    monkeypatch.setattr(notify_mod, "send_telegram", lambda s, text: sent.update(tg=text) or True)
-    notify_mod.send_digest(get_settings(), [ranked(str(i), 80) for i in range(12)], None)
-    assert "+2 more not shown" in sent["tg"] and "see the email" not in sent["tg"]
+def test_partial_telegram_failure_is_not_delivered(monkeypatch):
+    results = iter([True, False, True])
+    monkeypatch.setattr(notify_mod, "send_telegram", lambda s, text: next(results))
+    monkeypatch.setattr(notify_mod, "send_email", lambda s, subject, body: False)
+    jobs = [fat(i) for i in range(40)]
+    assert notify_mod.send_digest(get_settings(), jobs, None) == {"telegram": False, "email": False}
 
 
 def test_scan_passes_only_unseen_jobs_capped_to_preset(scan, monkeypatch, tmp_path):
@@ -299,17 +323,3 @@ def test_repost_with_new_id_is_not_ranked_again(scan, tmp_path):
     mark_seen(tmp_path / "s.db", [ranked("a", 90)])
     scan["found"] = [make_job("new-id", "Data Analyst a", "Acme")]  # same company + title as seen "a"
     assert cli.run() == 0 and scan["preset"] is None
-
-
-def test_overflow_stays_unseen_unless_email_delivered(scan, tmp_path):
-    many = [ranked(str(i), 90 - i) for i in range(12)]
-    scan["found"] = [r.job for r in many]
-    scan["result"] = RunResult(ranked_jobs=many)
-    assert cli.run() == 0  # telegram only: top 10 shown, 2 overflow
-    unseen = {j.job_id for j in filter_unseen_jobs(tmp_path / "s.db", [r.job for r in many], 30)}
-    assert unseen == {"10", "11"}
-    scan["email"] = True
-    scan["found"] = [r.job for r in many if r.job.job_id in unseen]
-    scan["result"] = RunResult(ranked_jobs=[r for r in many if r.job.job_id in unseen])
-    assert cli.run() == 0
-    assert filter_unseen_jobs(tmp_path / "s.db", [r.job for r in many], 30) == []

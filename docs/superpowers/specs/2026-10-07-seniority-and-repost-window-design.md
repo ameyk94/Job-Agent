@@ -48,14 +48,17 @@ seen (dropping them again costs nothing). The log line becomes
 
 ### Digest: nothing is hidden
 
-Today the digest shows the top 10 and says "+N more in the app", but the app does not list scheduled jobs, and the
-extra jobs are still marked seen, so they are lost. Fix:
+Before: the digest showed the top 10 and said "+N more in the app", but the app does not list scheduled jobs, and
+the extra jobs were still marked seen, so they were lost. Owner decision (2026-10-07): **the full list goes to both
+Telegram and email.**
 
-- `build_digest(jobs, source_counts, max_jobs)`: `max_jobs` defaults to 10.
-- Email carries **every job above the cutoff** (`max_jobs=MAX_JOBS_PER_SCAN`, 40). Telegram carries the top 10 and,
-  when more exist, ends with "+N more: see the email."
-- `notify()` takes the two bodies. A job is only marked seen if it was included in at least one channel that
-  delivered; with email unconfigured, Telegram's overflow stays unseen and returns tomorrow.
+- `build_digest(jobs, source_counts)` returns the subject and a body listing every job (email).
+- `telegram_messages(jobs, source_counts)` packs every job into as few messages as fit 4096 characters, never
+  splitting a job. More than one message means each starts with `Job Scout: N new jobs (i/n)`. The sources line
+  ends the last message.
+- `send_digest` sends all Telegram messages plus one email. Telegram counts as delivered only if every message
+  was sent.
+- There is no top-10 cap and no overflow handling; every ranked job above the cutoff is reported and marked seen.
 
 ### Baseline script
 
@@ -76,5 +79,5 @@ run; tune after more scans), the sources.
   restarts the window; a repost with a new `job_id` but same company+title stays hidden inside the window.
 - Scan: senior jobs never reach `preset_jobs`, are not marked seen, and do not count toward the cap; all-senior
   results return 0 with no LLM call.
-- Digest: email body lists all N above the cutoff; Telegram body lists 10 plus the "see the email" line.
-- Overflow jobs are marked seen only when email is delivered.
+- Digest: email body lists all N above the cutoff; Telegram messages together list all N, each under 4096
+  characters, numbered (i/n) when more than one; a partly failed Telegram send is not counted as delivered.

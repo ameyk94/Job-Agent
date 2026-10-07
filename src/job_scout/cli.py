@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 
 from job_scout.config import Settings, get_settings
-from job_scout.notify import MAX_JOBS, build_digest, notify, send_digest
+from job_scout.notify import build_digest, notify, send_digest
 from job_scout.profile import extract_profile
 from job_scout.runner import stream_search
 from job_scout.search_plan import default_sources, load_plan, run_plan
@@ -60,10 +60,9 @@ def run(dry_run: bool = False) -> int:
     ranked = result.ranked_jobs  # all unseen: senior and recently reported jobs were dropped before ranking
     good = sorted((j for j in ranked if j.fit_score >= settings.notify_min_score), key=lambda j: j.fit_score, reverse=True)
     logger.info("ranked=%d above_threshold=%d", len(ranked), len(good))
-    unshown: list = []
     if good:
         if dry_run:
-            subject, body = build_digest(good, counts, max_jobs=len(good))
+            subject, body = build_digest(good, counts)
             print(subject, body, sep="\n\n")
         else:
             sent = send_digest(settings, good, counts)
@@ -71,10 +70,8 @@ def run(dry_run: bool = False) -> int:
                 # Nothing delivered: leave the jobs unseen so the next run retries.
                 logger.error("no notification channel succeeded")
                 return 1
-            if not sent.get("email"):
-                unshown = good[MAX_JOBS:]  # Telegram showed only the top MAX_JOBS; the rest return next scan
     if not dry_run:
-        mark_seen(settings.scout_db_path, [j for j in ranked if j not in unshown])
+        mark_seen(settings.scout_db_path, ranked)
     return 0
 
 

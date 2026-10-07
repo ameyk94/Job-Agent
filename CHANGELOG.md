@@ -17,7 +17,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow the pha
 - Seniority filter: titles with senior, sr, staff, lead, principal, director, head, vp, vice president or chief are
   dropped before ranking. Manager is kept.
 - Repost window: seen jobs are keyed on company + title and expire after `REPOST_GAP_DAYS` (30).
-- Email lists every job above the cutoff; Telegram lists the top 10 and points to the email.
+- The digest lists every job above the cutoff on both channels. Telegram splits it into numbered messages under
+  its 4096-character limit; email is one message.
 
 ### Changed
 - Adzuna adds "remote" to the query when the remote flag is set.
