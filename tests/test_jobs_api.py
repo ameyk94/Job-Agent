@@ -196,3 +196,37 @@ def test_adzuna_remote_flag_adds_remote_to_query(monkeypatch):
     assert seen["what"] == "data analyst remote"
     AdzunaSource(app_id="i", app_key="k").fetch("data analyst", "Toronto", "ca", False, 10)
     assert seen["what"] == "data analyst" and seen["where"] == "Toronto"
+
+
+def test_adzuna_retries_once_then_succeeds(monkeypatch, caplog):
+    monkeypatch.setattr("job_scout.tools.jobs_api.RETRY_DELAY_S", 0)
+    calls = []
+
+    def flaky_get(url, params, timeout):
+        calls.append(1)
+        resp = MagicMock()
+        if len(calls) == 1:
+            resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "429", request=MagicMock(), response=MagicMock(status_code=429)
+            )
+        else:
+            resp.json.return_value = {"results": [{"id": 1, "title": "Data Analyst", "company": {"display_name": "Acme"}}]}
+        return resp
+
+    monkeypatch.setattr("job_scout.tools.jobs_api.httpx.get", flaky_get)
+    jobs = AdzunaSource(app_id="i", app_key="k").fetch("data analyst", "Toronto", "ca", False, 10)
+    assert len(calls) == 2 and [j.title for j in jobs] == ["Data Analyst"]
+    assert "attempt 1" in caplog.text and "429" in caplog.text
+
+
+def test_adzuna_gives_up_after_two_failures(monkeypatch):
+    monkeypatch.setattr("job_scout.tools.jobs_api.RETRY_DELAY_S", 0)
+    calls = []
+
+    def down(url, params, timeout):
+        calls.append(1)
+        raise httpx.ConnectError("down")
+
+    monkeypatch.setattr("job_scout.tools.jobs_api.httpx.get", down)
+    assert AdzunaSource(app_id="i", app_key="k").fetch("data analyst", None, "ca", False, 10) == []
+    assert len(calls) == 2

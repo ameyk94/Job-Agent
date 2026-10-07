@@ -22,6 +22,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow the pha
 
 ### Changed
 - Adzuna adds "remote" to the query when the remote flag is set.
+- Adzuna logs a warning with the HTTP status on failure and retries once after 2 s. A transient error used to drop a whole
+  query silently (the 2026-10-07 08:00 scan found 48 jobs; the same plan found 164 an hour later).
 - Seen-jobs store moved to a new table `seen_jobs` (old `seen` table is ignored). Digest no longer says "more in the app".
 
 ## [0.0.0] - Phase 0, unreleased
