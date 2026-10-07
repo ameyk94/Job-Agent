@@ -46,9 +46,16 @@ found -> `drop_senior` -> `filter_unseen_jobs` -> cap `MAX_JOBS_PER_SCAN` -> ran
 seen (dropping them again costs nothing). The log line becomes
 `found=N senior_dropped=N unseen=N sources: ...`. If nothing is left, the scan returns 0 with no LLM call.
 
-### Digest wording
+### Digest: nothing is hidden
 
-"+N more in the app." becomes "+N more above the cutoff, not shown." (the app does not list scheduled jobs).
+Today the digest shows the top 10 and says "+N more in the app", but the app does not list scheduled jobs, and the
+extra jobs are still marked seen, so they are lost. Fix:
+
+- `build_digest(jobs, source_counts, max_jobs)`: `max_jobs` defaults to 10.
+- Email carries **every job above the cutoff** (`max_jobs=MAX_JOBS_PER_SCAN`, 40). Telegram carries the top 10 and,
+  when more exist, ends with "+N more: see the email."
+- `notify()` takes the two bodies. A job is only marked seen if it was included in at least one channel that
+  delivered; with email unconfigured, Telegram's overflow stays unseen and returns tomorrow.
 
 ### Baseline script
 
@@ -69,4 +76,5 @@ run; tune after more scans), the sources.
   restarts the window; a repost with a new `job_id` but same company+title stays hidden inside the window.
 - Scan: senior jobs never reach `preset_jobs`, are not marked seen, and do not count toward the cap; all-senior
   results return 0 with no LLM call.
-- Digest footer wording.
+- Digest: email body lists all N above the cutoff; Telegram body lists 10 plus the "see the email" line.
+- Overflow jobs are marked seen only when email is delivered.
