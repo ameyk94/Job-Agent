@@ -323,3 +323,14 @@ def test_repost_with_new_id_is_not_ranked_again(scan, tmp_path):
     mark_seen(tmp_path / "s.db", [ranked("a", 90)])
     scan["found"] = [make_job("new-id", "Data Analyst a", "Acme")]  # same company + title as seen "a"
     assert cli.run() == 0 and scan["preset"] is None
+
+
+def test_main_silences_httpx_url_logging(monkeypatch):
+    """httpx INFO lines contain request URLs, which carry the Adzuna key and the Telegram bot token."""
+    import logging
+
+    monkeypatch.setattr(cli, "run", lambda dry_run=False: 0)
+    logging.getLogger("httpx").setLevel(logging.NOTSET)
+    assert cli.main(["run"]) == 0
+    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
+    assert logging.getLogger("httpcore").getEffectiveLevel() >= logging.WARNING
