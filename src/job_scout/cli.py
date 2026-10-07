@@ -89,6 +89,9 @@ def main(argv: list[str] | None = None) -> int:
     runp.add_argument("--dry-run", action="store_true", help="print the digest; send nothing, record nothing")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    # httpx logs full URLs at INFO: they contain the Adzuna key and the Telegram bot token.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     return run(dry_run=args.dry_run)
 
 

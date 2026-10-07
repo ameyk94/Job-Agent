@@ -20,6 +20,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow the pha
 - The digest lists every job above the cutoff on both channels. Telegram splits it into numbered messages under
   its 4096-character limit; email is one message.
 
+### Security
+- `job-scout run` no longer logs `httpx`/`httpcore` request URLs. They contained the Adzuna app key and the Telegram bot token
+  (in the URL path) and were written to the journal on every scan.
+
 ### Changed
 - Adzuna adds "remote" to the query when the remote flag is set.
 - Adzuna logs a warning with the HTTP status on failure and retries once after 2 s. A transient error used to drop a whole
