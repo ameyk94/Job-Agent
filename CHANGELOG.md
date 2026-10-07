@@ -25,6 +25,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow the pha
   40 inputs; Moneris and Konrad appeared twice). Only the first score per job is kept now, and jobs the model skipped are reported
   in `errors` and, not being marked seen, are ranked again on the next scan.
 
+### Security
+- `job-scout run` no longer logs `httpx`/`httpcore` request URLs. They contained the Adzuna app key and the Telegram bot token
+  (in the URL path) and were written to the journal on every scan.
+
 ### Changed
 - Adzuna adds "remote" to the query when the remote flag is set.
 - Adzuna logs a warning with the HTTP status on failure and retries once after 2 s. A transient error used to drop a whole
