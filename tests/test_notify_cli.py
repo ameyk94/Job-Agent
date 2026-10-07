@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import smtplib
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -11,7 +12,7 @@ import job_scout.notify as notify_mod
 from job_scout.config import get_settings
 from job_scout.graph.schemas import RankedJob
 from job_scout.runner import RunResult
-from job_scout.store import filter_unseen, mark_seen
+from job_scout.store import filter_unseen_jobs, job_key, mark_seen
 from tests.conftest import make_job
 
 
@@ -25,18 +26,34 @@ def ranked(job_id: str, score: int) -> RankedJob:
     )
 
 
-def test_store_reports_only_unseen(tmp_path):
+T0 = datetime(2026, 10, 1, 8, 0, tzinfo=UTC)
+
+
+def test_job_key_ignores_case_and_spacing():
+    assert job_key("Acme  Corp", "Data  Analyst") == job_key("acme corp", "data analyst")
+
+
+def test_store_repost_window(tmp_path):
     db = tmp_path / "s.db"
-    jobs = [ranked("a", 80), ranked("b", 75)]
-    assert len(filter_unseen(db, jobs)) == 2
-    mark_seen(db, jobs[:1])
-    mark_seen(db, jobs[:1])  # idempotent
-    assert [j.job.job_id for j in filter_unseen(db, jobs)] == ["b"]
+    a = ranked("a", 80)
+    assert [j.job_id for j in filter_unseen_jobs(db, [a.job], 30, now=T0)] == ["a"]
+    mark_seen(db, [a], now=T0)
+    assert filter_unseen_jobs(db, [a.job], 30, now=T0 + timedelta(days=29)) == []
+    assert [j.job_id for j in filter_unseen_jobs(db, [a.job], 30, now=T0 + timedelta(days=31))] == ["a"]
+    mark_seen(db, [a], now=T0 + timedelta(days=31))  # resurfaced: window restarts
+    assert filter_unseen_jobs(db, [a.job], 30, now=T0 + timedelta(days=45)) == []
+
+
+def test_repost_with_new_id_stays_hidden_inside_window(tmp_path):
+    db = tmp_path / "s.db"
+    mark_seen(db, [ranked("a", 80)], now=T0)
+    repost = make_job("zzz", "Data Analyst a", "Acme")  # same company + title, new id
+    assert filter_unseen_jobs(db, [repost], 30, now=T0 + timedelta(days=3)) == []
 
 
 def test_digest_sorted_and_capped():
     jobs = [ranked(str(i), 70 + i) for i in range(12)]
-    subject, body = notify_mod.build_digest(jobs)
+    subject, body = notify_mod.build_digest(jobs, more_note="more.")
     assert subject == "Job Scout: 12 new jobs"
     assert body.startswith("81  Data Analyst 11")
     assert "+2 more" in body
@@ -127,6 +144,8 @@ def scan(monkeypatch, tmp_path, sample_profile):
         "ok": True,
         "preset": None,
         "bodies": [],
+        "email": False,
+        "digest_jobs": None,
     }
 
     def fake_stream(*a, **k):
@@ -144,6 +163,13 @@ def scan(monkeypatch, tmp_path, sample_profile):
         return {"telegram": state["ok"]}
 
     monkeypatch.setattr(cli, "notify", fake_notify)
+
+    def fake_send_digest(settings, jobs, counts):
+        state["sent"].append(notify_mod.build_digest(jobs)[0])
+        state["digest_jobs"] = jobs
+        return {"telegram": state["ok"], "email": state["email"]}
+
+    monkeypatch.setattr(cli, "send_digest", fake_send_digest)
     return state
 
 
@@ -180,18 +206,34 @@ def test_missing_cv_alerts(scan, monkeypatch, tmp_path):
     assert scan["sent"] == ["Job Scout: scan FAILED"]
 
 
-def test_store_filter_unseen_jobs(tmp_path):
-    from job_scout.store import filter_unseen_jobs
-
-    db = tmp_path / "s.db"
-    a, b = ranked("a", 80), ranked("b", 75)
-    mark_seen(db, [a])
-    assert [j.job_id for j in filter_unseen_jobs(db, [a.job, b.job])] == ["b"]
-
-
 def test_digest_has_source_counts_footer():
     subject, body = notify_mod.build_digest([ranked("a", 90)], {"adzuna": 31, "wwr": 0})
     assert body.endswith("Sources: adzuna 31, wwr 0")
+
+
+def test_email_digest_lists_every_job_telegram_lists_ten(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "42")
+    monkeypatch.setenv("SMTP_USER", "me@example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "pw")
+    monkeypatch.setenv("EMAIL_TO", "me@example.com")
+    sent = {}
+    monkeypatch.setattr(notify_mod, "send_telegram", lambda s, text: sent.update(tg=text) or True)
+    monkeypatch.setattr(notify_mod, "send_email", lambda s, subject, body: sent.update(email=body) or True)
+    jobs = [ranked(str(i), 70 + i % 30) for i in range(25)]
+    result = notify_mod.send_digest(get_settings(), jobs, {"adzuna": 25})
+    assert result == {"telegram": True, "email": True}
+    assert sent["email"].count("Data Analyst") == 25 and "more" not in sent["email"].split("Sources")[0]
+    assert sent["tg"].count("Data Analyst") == 10 and "+15 more: see the email." in sent["tg"]
+
+
+def test_telegram_only_says_overflow_not_shown(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "42")
+    sent = {}
+    monkeypatch.setattr(notify_mod, "send_telegram", lambda s, text: sent.update(tg=text) or True)
+    notify_mod.send_digest(get_settings(), [ranked(str(i), 80) for i in range(12)], None)
+    assert "+2 more not shown" in sent["tg"] and "see the email" not in sent["tg"]
 
 
 def test_scan_passes_only_unseen_jobs_capped_to_preset(scan, monkeypatch, tmp_path):
@@ -233,3 +275,41 @@ def test_bad_plan_alerts(scan, monkeypatch):
     monkeypatch.setattr(cli, "load_plan", bad)
     assert cli.run() == 1
     assert "row 3" in scan["bodies"][0]
+
+
+def test_senior_jobs_never_reach_ranking_or_the_cap(scan, monkeypatch, tmp_path):
+    monkeypatch.setenv("MAX_JOBS_PER_SCAN", "1")
+    get_settings.cache_clear()
+    scan["found"] = [make_job("s", "Senior Data Analyst", "Acme"), make_job("k", "Data Analyst", "Beta")]
+    assert cli.run() == 0
+    assert [j.job_id for j in scan["preset"]] == ["k"]  # the senior job did not use the cap slot
+
+
+def test_all_senior_means_no_llm_call(scan, monkeypatch):
+    scan["found"] = [make_job("s", "Senior Data Analyst", "Acme")]
+
+    def no_llm(*a, **k):
+        raise AssertionError("no LLM when everything is senior")
+
+    monkeypatch.setattr(cli, "extract_profile", no_llm)
+    assert cli.run() == 0 and scan["sent"] == []
+
+
+def test_repost_with_new_id_is_not_ranked_again(scan, tmp_path):
+    mark_seen(tmp_path / "s.db", [ranked("a", 90)])
+    scan["found"] = [make_job("new-id", "Data Analyst a", "Acme")]  # same company + title as seen "a"
+    assert cli.run() == 0 and scan["preset"] is None
+
+
+def test_overflow_stays_unseen_unless_email_delivered(scan, tmp_path):
+    many = [ranked(str(i), 90 - i) for i in range(12)]
+    scan["found"] = [r.job for r in many]
+    scan["result"] = RunResult(ranked_jobs=many)
+    assert cli.run() == 0  # telegram only: top 10 shown, 2 overflow
+    unseen = {j.job_id for j in filter_unseen_jobs(tmp_path / "s.db", [r.job for r in many], 30)}
+    assert unseen == {"10", "11"}
+    scan["email"] = True
+    scan["found"] = [r.job for r in many if r.job.job_id in unseen]
+    scan["result"] = RunResult(ranked_jobs=[r for r in many if r.job.job_id in unseen])
+    assert cli.run() == 0
+    assert filter_unseen_jobs(tmp_path / "s.db", [r.job for r in many], 30) == []

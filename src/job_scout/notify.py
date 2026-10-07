@@ -20,13 +20,21 @@ TELEGRAM_LIMIT = 4096  # Bot API max message length
 MAX_JOBS = 10
 
 
-def build_digest(jobs: list[RankedJob], source_counts: dict[str, int] | None = None) -> tuple[str, str]:
-    """Return ``(subject, body)`` for the best ``MAX_JOBS`` jobs, highest score first."""
+def build_digest(
+    jobs: list[RankedJob],
+    source_counts: dict[str, int] | None = None,
+    max_jobs: int = MAX_JOBS,
+    more_note: str = "",
+) -> tuple[str, str]:
+    """Return ``(subject, body)`` listing the best ``max_jobs`` jobs, highest score first.
+
+    ``more_note`` is appended as ``+N <more_note>`` when jobs were left out.
+    """
     jobs = sorted(jobs, key=lambda j: j.fit_score, reverse=True)
     total = len(jobs)
     subject = f"Job Scout: {total} new job{'s' if total != 1 else ''}"
     blocks = []
-    for j in jobs[:MAX_JOBS]:
+    for j in jobs[:max_jobs]:
         where = "Remote" if j.job.remote else j.job.location
         lines = [f"{j.fit_score}  {j.job.title} @ {j.job.company} ({where})", j.job.url]
         if j.matched_skills:
@@ -35,11 +43,26 @@ def build_digest(jobs: list[RankedJob], source_counts: dict[str, int] | None = N
             lines.append("Gaps: " + ", ".join(j.gaps[:4]))
         blocks.append("\n".join(lines))
     body = "\n\n".join(blocks)
-    if total > MAX_JOBS:
-        body += f"\n\n+{total - MAX_JOBS} more in the app."
+    if total > max_jobs and more_note:
+        body += f"\n\n+{total - max_jobs} {more_note}"
     if source_counts:
         body += "\n\nSources: " + ", ".join(f"{name} {n}" for name, n in source_counts.items())
     return subject, body
+
+
+def send_digest(settings: Settings, jobs: list[RankedJob], source_counts: dict[str, int] | None) -> dict[str, bool]:
+    """Send the digest: email lists every job, Telegram lists the top ``MAX_JOBS``.
+
+    Telegram says where the rest is only if email is configured; otherwise the overflow is not shown anywhere
+    (the caller leaves those jobs unseen so they return on the next scan).
+    """
+    subject, email_body = build_digest(jobs, source_counts, max_jobs=len(jobs))
+    note = "more: see the email." if settings.has_email else "more not shown (set up email to get the full list)."
+    _, tg_body = build_digest(jobs, source_counts, max_jobs=MAX_JOBS, more_note=note)
+    return {
+        "telegram": send_telegram(settings, f"{subject}\n\n{tg_body}"),
+        "email": send_email(settings, subject, email_body),
+    }
 
 
 def send_telegram(settings: Settings, text: str) -> bool:

@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     notify_min_score: int = Field(default=70, alias="NOTIFY_MIN_SCORE")
     search_plan_path: str = Field(default="config/search.csv", alias="SEARCH_PLAN_PATH")
     max_jobs_per_scan: int = Field(default=40, alias="MAX_JOBS_PER_SCAN")
+    # A job reported once may be reported again after this many days (keyed on company + title).
+    repost_gap_days: int = Field(default=30, alias="REPOST_GAP_DAYS")
     telegram_bot_token: SecretStr = Field(default=SecretStr(""), alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str = Field(default="", alias="TELEGRAM_CHAT_ID")
     telegram_thread_id: str = Field(default="", alias="TELEGRAM_THREAD_ID")
