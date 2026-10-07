@@ -85,3 +85,26 @@ def test_fetch_jobs_uses_preset_jobs_without_llm(monkeypatch, sample_profile):
     out = fetch_mod.fetch_jobs({"profile": sample_profile, "preset_jobs": preset})
     assert out["jobs"] == preset
     assert out["jobs_sources"] == ["adzuna", "wwr"]
+
+
+def test_rank_jobs_keeps_one_score_per_job_even_if_model_repeats_ids(monkeypatch, sample_profile):
+    """Regression: 2026-10-07 scan ranked 41 jobs from 40 inputs; Moneris and Konrad appeared twice."""
+    jobs = [make_job(f"j{i}", f"Role {i}", f"Co{i}") for i in range(3)]
+
+    def fake_model(*a, **k):
+        llm = structured_llm(None)
+        llm.with_structured_output.return_value.invoke.return_value = JobScores(
+            scores=[
+                JobScore(job_id="j0", fit_score=90, fit_explanation="first"),
+                JobScore(job_id="j0", fit_score=60, fit_explanation="repeat"),
+                JobScore(job_id="j1", fit_score=80, fit_explanation="ok"),
+                JobScore(job_id="nope", fit_score=99, fit_explanation="unknown id"),
+            ]
+        )
+        return llm
+
+    monkeypatch.setattr(rank_mod, "get_chat_model", fake_model)
+    out = rank_jobs({"profile": sample_profile, "jobs": jobs, "llm_calls": 0})
+    assert [r.job.job_id for r in out["ranked_jobs"]] == ["j0", "j1"]
+    assert out["ranked_jobs"][0].fit_explanation == "first"
+    assert out["errors"] == ["rank_jobs: the model returned no score for 1 of 3 jobs"]

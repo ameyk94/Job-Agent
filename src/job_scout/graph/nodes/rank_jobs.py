@@ -63,14 +63,16 @@ def rank_jobs(state: AgentState) -> dict:
 
     model = get_chat_model(settings.scout_model, temperature=0.0).with_structured_output(JobScores)
     ranked: list[RankedJob] = []
+    scored: set[str] = set()
     for batch in _batches(jobs, BATCH_SIZE):
         prompt = RANK_JOBS_PROMPT.format(profile=_render_profile(profile), jobs=_render_jobs(batch))
         result: JobScores = model.invoke(prompt)
         calls += 1
         for score in result.scores:
             job = by_id.get(score.job_id)
-            if job is None:
-                continue
+            if job is None or score.job_id in scored:
+                continue  # unknown id, or the model scored this job twice: keep the first score only
+            scored.add(score.job_id)
             ranked.append(
                 RankedJob(
                     job=job,
@@ -82,4 +84,7 @@ def rank_jobs(state: AgentState) -> dict:
             )
 
     ranked.sort(key=lambda r: r.fit_score, reverse=True)
-    return {"ranked_jobs": ranked, "llm_calls": calls}
+    errors = list(state.get("errors", []))
+    if len(scored) < len(jobs):
+        errors.append(f"rank_jobs: the model returned no score for {len(jobs) - len(scored)} of {len(jobs)} jobs")
+    return {"ranked_jobs": ranked, "llm_calls": calls, "errors": errors}
