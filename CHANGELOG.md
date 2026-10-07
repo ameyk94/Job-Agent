@@ -20,6 +20,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versions follow the pha
 - The digest lists every job above the cutoff on both channels. Telegram splits it into numbered messages under
   its 4096-character limit; email is one message.
 
+### Fixed
+- Ranking kept every score the model returned, so a job scored twice was listed twice (the 2026-10-07 scan ranked 41 jobs from
+  40 inputs; Moneris and Konrad appeared twice). Only the first score per job is kept now, and jobs the model skipped are reported
+  in `errors` and, not being marked seen, are ranked again on the next scan.
+
 ### Changed
 - Adzuna adds "remote" to the query when the remote flag is set.
 - Adzuna logs a warning with the HTTP status on failure and retries once after 2 s. A transient error used to drop a whole
